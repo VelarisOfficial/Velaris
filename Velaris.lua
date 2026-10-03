@@ -1,16 +1,16 @@
 --[[
-    Velaris UI Library v1.0.0
-    A modern, Rayfield-inspired script hub library for Roblox.
+    Velaris UI Library v2.0.0 - WindUI-style
+    A modern, WindUI-inspired script hub library for Roblox. Mobile + PC.
 
     Created for you. Usage:
-        local Velaris = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOURUSERNAME/velaris/main/Velaris.lua"))()
+        local Velaris = loadstring(game:HttpGet("https://raw.githubusercontent.com/VelarisOfficial/Velaris/refs/heads/main/Velaris.lua"))()
         local Window = Velaris:CreateWindow({ Name = "My Hub" })
         local Tab = Window:CreateTab("Main")
         Tab:CreateButton({ Name = "Print", Callback = function() print("Hi") end })
 ]]
 
 local Velaris = {
-    Version = "1.0.0",
+    Version = "2.0.0",
     Flags = {},
     _UIs = {}
 }
@@ -65,6 +65,7 @@ local function MakeDraggable(frame, handle)
     handle = handle or frame
     local dragging = false
     local dragStart, startPos
+    local dragInput
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
@@ -77,12 +78,61 @@ local function MakeDraggable(frame, handle)
             end)
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
+    handle.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and dragInput and input == dragInput and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
+end
+
+local function Trim(s)
+    if type(s) ~= "string" then return "" end
+    -- strip normal whitespace + common zero-width chars users copy from Discord
+    s = s:gsub("^[%s\226\128\139\194\160]+", ""):gsub("[%s\226\128\139\194\160]+$", "")
+    return s
+end
+
+local function NormalizeKeys(input, fallback)
+    local out = {}
+    if type(input) == "string" then
+        table.insert(out, Trim(input))
+    elseif type(input) == "table" then
+        for _, k in ipairs(input) do
+            if type(k) == "string" and Trim(k) ~= "" then
+                table.insert(out, Trim(k))
+            end
+        end
+        -- also support {Key = "..."} single-key tables
+        if #out == 0 and type(input.Key) == "string" then
+            table.insert(out, Trim(input.Key))
+        end
+    end
+    if #out == 0 and fallback then
+        for _, k in ipairs(fallback) do table.insert(out, k) end
+    end
+    return out
+end
+
+local function IsMobile()
+    local touch = false
+    local keyboard = true
+    pcall(function()
+        touch = UserInputService.TouchEnabled
+        keyboard = UserInputService.KeyboardEnabled
+    end)
+    if touch and not keyboard then return true end
+    local vp = Vector2.new(0, 0)
+    pcall(function()
+        vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or vp
+    end)
+    if vp.X > 0 and vp.X < 640 then return true end
+    return false
 end
 
 local function GetParent()
@@ -105,18 +155,19 @@ local function GetParent()
 end
 
 local Themes = {
+    -- WindUI-modern inspired: flat near-black cards, wide gaps, big radius
     Dark = {
-        Background = Color3.fromRGB(15, 15, 22),
-        Topbar = Color3.fromRGB(20, 20, 30),
-        Sidebar = Color3.fromRGB(17, 17, 26),
-        Page = Color3.fromRGB(15, 15, 22),
-        Element = Color3.fromRGB(24, 24, 36),
-        ElementHover = Color3.fromRGB(30, 30, 46),
+        Background = Color3.fromRGB(16, 16, 20),
+        Topbar = Color3.fromRGB(19, 19, 24),
+        Sidebar = Color3.fromRGB(18, 18, 23),
+        Page = Color3.fromRGB(16, 16, 20),
+        Element = Color3.fromRGB(29, 29, 36),
+        ElementHover = Color3.fromRGB(37, 37, 48),
         Accent = Color3.fromRGB(139, 92, 246),
         Accent2 = Color3.fromRGB(99, 102, 241),
         Text = Color3.fromRGB(235, 235, 245),
         SubText = Color3.fromRGB(150, 150, 170),
-        Stroke = Color3.fromRGB(55, 55, 75),
+        Stroke = Color3.fromRGB(45, 45, 58),
         Success = Color3.fromRGB(34, 197, 94),
         Warn = Color3.fromRGB(234, 179, 8),
     },
@@ -175,14 +226,36 @@ end
 
 function Velaris:CreateWindow(Settings)
     Settings = Settings or {}
-    local WindowName = Settings.Name or "Velaris Hub"
+    -- Support both Velaris (Name) and WindUI-style (Title) APIs
+    local WindowName = Settings.Name or Settings.Title or "Velaris Hub"
     local LoadingTitle = Settings.LoadingTitle or WindowName
     local LoadingSubtitle = Settings.LoadingSubtitle or ("Velaris " .. self.Version)
     local ThemeName = Settings.Theme or "Dark"
     local Theme = Themes[ThemeName] or Themes.Dark
-    local ToggleKey = Settings.ToggleUIKeybind or Enum.KeyCode.K
-    local KeySystem = Settings.KeySystem or false
-    local KeySettings = Settings.KeySettings or { Title = "Key System", Subtitle = "Enter your key", Keys = { "velaris-demo-key" } }
+    local ToggleKey = Settings.ToggleUIKeybind or Settings.ToggleKey or Enum.KeyCode.K
+    -- KEY SYSTEM: support boolean + table (WindUI-style) to fix "invalid key" bug
+    -- Accepted forms:
+    --   KeySystem = false
+    --   KeySystem = true + KeySettings = {Keys = {...}}
+    --   KeySystem = {Title=..., Keys={...}} (table directly)
+    local rawKS = Settings.KeySystem
+    local rawKSettings = Settings.KeySettings
+    local ksEnabled = false
+    local ksConfig = { Title = "Key System", Subtitle = "Enter your key", Note = nil, Keys = { "velaris-demo-key" } }
+    if type(rawKS) == "table" then
+        ksEnabled = true
+        for k, v in pairs(rawKS) do ksConfig[k] = v end
+        if type(rawKSettings) == "table" then
+            for k, v in pairs(rawKSettings) do ksConfig[k] = v end
+        end
+    elseif rawKS == true then
+        ksEnabled = true
+        if type(rawKSettings) == "table" then
+            for k, v in pairs(rawKSettings) do ksConfig[k] = v end
+        end
+    end
+    local ValidKeys = NormalizeKeys(ksConfig.Keys or ksConfig.Key or ksConfig.KeyList, { "velaris-demo-key" })
+    local KeyPassed = not ksEnabled
     local ConfigSettings = Settings.ConfigurationSaving or { Enabled = false, FolderName = "Velaris", FileName = "config" }
 
     if ConfigSettings.Enabled then
@@ -263,25 +336,25 @@ function Velaris:CreateWindow(Settings)
     LoadPct.TextXAlignment = Enum.TextXAlignment.Left
     LoadPct.Parent = Loading
 
-    -- ===== Key System =====
-    local KeyPassed = not KeySystem
+    -- ===== Key System (FIXED: trim, table-style, mobile, non-blocking) =====
     local KeyFrame
-    if KeySystem then
+    local mobileKS = IsMobile()
+    if ksEnabled then
         Loading.Visible = false
         KeyFrame = Instance.new("Frame")
         KeyFrame.Name = "KeySystem"
-        KeyFrame.Size = UDim2.new(0, 380, 0, 250)
-        KeyFrame.Position = UDim2.new(0.5, -190, 0.5, -125)
+        KeyFrame.Size = UDim2.new(0, mobileKS and 340 or 380, 0, 260)
+        KeyFrame.Position = UDim2.new(0.5, -(mobileKS and 340 or 380) / 2, 0.5, -130)
         KeyFrame.BackgroundColor3 = Theme.Background
         KeyFrame.Parent = Gui
-        Corner(KeyFrame, 12)
+        Corner(KeyFrame, 18)
         Stroke(KeyFrame, Theme.Stroke, 1, 0.3)
 
         local KT = Instance.new("TextLabel")
         KT.Size = UDim2.new(1, -40, 0, 30)
         KT.Position = UDim2.new(0, 20, 0, 18)
         KT.BackgroundTransparency = 1
-        KT.Text = KeySettings.Title or "Key System"
+        KT.Text = ksConfig.Title or "Key System"
         KT.Font = Enum.Font.GothamBold
         KT.TextSize = 20
         KT.TextColor3 = Theme.Text
@@ -292,7 +365,7 @@ function Velaris:CreateWindow(Settings)
         KS.Size = UDim2.new(1, -40, 0, 20)
         KS.Position = UDim2.new(0, 20, 0, 48)
         KS.BackgroundTransparency = 1
-        KS.Text = KeySettings.Subtitle or "Enter your key below"
+        KS.Text = ksConfig.Subtitle or ksConfig.Note or "Enter your key below"
         KS.Font = Enum.Font.Gotham
         KS.TextSize = 13
         KS.TextColor3 = Theme.SubText
@@ -300,7 +373,7 @@ function Velaris:CreateWindow(Settings)
         KS.Parent = KeyFrame
 
         local KeyBox = Instance.new("TextBox")
-        KeyBox.Size = UDim2.new(1, -40, 0, 42)
+        KeyBox.Size = UDim2.new(1, -40, 0, 44)
         KeyBox.Position = UDim2.new(0, 20, 0, 82)
         KeyBox.BackgroundColor3 = Theme.Element
         KeyBox.Text = ""
@@ -309,13 +382,14 @@ function Velaris:CreateWindow(Settings)
         KeyBox.TextSize = 14
         KeyBox.TextColor3 = Theme.Text
         KeyBox.PlaceholderColor3 = Theme.SubText
+        KeyBox.ClearTextOnFocus = false
         KeyBox.Parent = KeyFrame
-        Corner(KeyBox, 8)
+        Corner(KeyBox, 12)
         Stroke(KeyBox, Theme.Stroke, 1, 0.4)
         Padding(KeyBox, 12, 0, 12, 0)
 
         local KeyBtn = Instance.new("TextButton")
-        KeyBtn.Size = UDim2.new(1, -40, 0, 42)
+        KeyBtn.Size = UDim2.new(1, -40, 0, 44)
         KeyBtn.Position = UDim2.new(0, 20, 0, 136)
         KeyBtn.BackgroundColor3 = Theme.Accent
         KeyBtn.Text = "Check Key"
@@ -324,7 +398,7 @@ function Velaris:CreateWindow(Settings)
         KeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         KeyBtn.AutoButtonColor = true
         KeyBtn.Parent = KeyFrame
-        Corner(KeyBtn, 8)
+        Corner(KeyBtn, 12)
 
         local KeyMsg = Instance.new("TextLabel")
         KeyMsg.Size = UDim2.new(1, -40, 0, 20)
@@ -338,22 +412,36 @@ function Velaris:CreateWindow(Settings)
         KeyMsg.Parent = KeyFrame
 
         local GetKeyBtn
-        if KeySettings.Note then
+        if ksConfig.Note then
             GetKeyBtn = Instance.new("TextButton")
             GetKeyBtn.Size = UDim2.new(1, -40, 0, 28)
-            GetKeyBtn.Position = UDim2.new(0, 20, 0, 208)
+            GetKeyBtn.Position = UDim2.new(0, 20, 0, 210)
             GetKeyBtn.BackgroundTransparency = 1
-            GetKeyBtn.Text = KeySettings.Note
+            GetKeyBtn.Text = tostring(ksConfig.Note)
             GetKeyBtn.Font = Enum.Font.Gotham
             GetKeyBtn.TextSize = 12
             GetKeyBtn.TextColor3 = Theme.Accent
             GetKeyBtn.Parent = KeyFrame
+            GetKeyBtn.Activated:Connect(function()
+                local link = tostring(ksConfig.Note)
+                -- copy link if it looks like a URL, else copy nothing
+                pcall(function()
+                    if setclipboard and (link:find("http") or link:find("discord")) then
+                        setclipboard(link:match("https?://%S+") or link)
+                        KeyMsg.Text = "Link copied to clipboard!"
+                        KeyMsg.TextColor3 = Theme.Success
+                    end
+                end)
+            end)
         end
 
-        KeyBtn.MouseButton1Click:Connect(function()
-            local entered = KeyBox.Text
+        local checking = false
+        local function CheckKey()
+            if checking or KeyPassed then return end
+            checking = true
+            local entered = Trim(KeyBox.Text)
             local valid = false
-            for _, k in ipairs(KeySettings.Keys or {}) do
+            for _, k in ipairs(ValidKeys) do
                 if entered == k then valid = true break end
             end
             if valid then
@@ -361,78 +449,153 @@ function Velaris:CreateWindow(Settings)
                 KeyMsg.TextColor3 = Theme.Success
                 task.wait(0.5)
                 KeyPassed = true
-                Tween(KeyFrame, { Size = UDim2.new(0, 0, 0, 0) }, 0.25)
-                task.wait(0.25)
-                KeyFrame:Destroy()
+                local tw = Tween(KeyFrame, { Size = UDim2.new(0, 0, 0, 0) }, 0.25)
+                if tw then pcall(function() tw.Completed:Wait() end) else task.wait(0.25) end
+                if KeyFrame and KeyFrame.Parent then KeyFrame:Destroy() end
                 Loading.Visible = true
             else
-                KeyMsg.Text = "Invalid key, try again."
+                if entered == "" then
+                    KeyMsg.Text = "Please paste a key first."
+                else
+                    KeyMsg.Text = "Invalid key (got " .. #entered .. " chars). Trimmed spaces, try again."
+                end
                 KeyMsg.TextColor3 = Color3.fromRGB(239, 68, 68)
-                Tween(KeyBox, { Position = KeyBox.Position + UDim2.new(0, 6, 0, 0) }, 0.05)
+                local base = UDim2.new(0, 20, 0, 82)
+                Tween(KeyBox, { Position = base + UDim2.new(0, 6, 0, 0) }, 0.05)
                 task.wait(0.05)
-                Tween(KeyBox, { Position = KeyBox.Position - UDim2.new(0, 12, 0, 0) }, 0.05)
+                Tween(KeyBox, { Position = base - UDim2.new(0, 6, 0, 0) }, 0.05)
                 task.wait(0.05)
-                Tween(KeyBox, { Position = KeyBox.Position + UDim2.new(0, 6, 0, 0) }, 0.05)
+                Tween(KeyBox, { Position = base }, 0.05)
             end
+            checking = false
+        end
+        -- Activated works on PC + mobile, MouseButton1Click as fallback
+        KeyBtn.Activated:Connect(CheckKey)
+        KeyBtn.MouseButton1Click:Connect(CheckKey)
+        KeyBox.FocusLost:Connect(function(enterPressed)
+            if enterPressed then CheckKey() end
         end)
-        repeat task.wait() until KeyPassed
+        -- NOTE: non-blocking on purpose. Loading animation below waits for KeyPassed.
     end
 
-    -- ===== Main Window =====
+    -- ===== Main Window (WindUI-style, mobile + PC responsive) =====
+    local startMobile = IsMobile()
+    local WIN_W = (Settings.Size and Settings.Size.X.Offset) or (startMobile and 360 or 580)
+    local WIN_H = (Settings.Size and Settings.Size.Y.Offset) or (startMobile and 440 or 460)
+    if startMobile then
+        -- fit small screens: use scale width with cap
+        WIN_W = 360
+        WIN_H = 440
+    end
     local Main = Instance.new("Frame")
     Main.Name = "Main"
-    Main.Size = UDim2.new(0, 620, 0, 420)
-    Main.Position = UDim2.new(0.5, -310, 0.5, -210)
+    Main.AnchorPoint = Vector2.new(0.5, 0.5)
+    Main.Size = UDim2.new(0, WIN_W, 0, WIN_H)
+    Main.Position = UDim2.new(0.5, 0, 0.5, 0)
     Main.BackgroundColor3 = Theme.Background
     Main.Visible = false
     Main.Parent = Gui
-    Corner(Main, 12)
+    Corner(Main, 18)
     Stroke(Main, Theme.Stroke, 1, 0.25)
     Main.ClipsDescendants = true
 
+    -- responsive: shrink on small viewports (mobile portrait)
+    local uiScale = Instance.new("UIScale")
+    uiScale.Parent = Main
+    local function FitScale()
+        local vp = Vector2.new(1280, 720)
+        pcall(function()
+            if workspace.CurrentCamera then vp = workspace.CurrentCamera.ViewportSize end
+        end)
+        local s = 1
+        if vp.X < 700 then
+            s = math.clamp((vp.X - 16) / WIN_W, 0.62, 1)
+        elseif vp.Y < 500 then
+            s = math.clamp((vp.Y - 16) / WIN_H, 0.7, 1)
+        end
+        uiScale.Scale = s
+    end
+    FitScale()
+    pcall(function()
+        if workspace.CurrentCamera then
+            workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(FitScale)
+        end
+    end)
+
     local Topbar = Instance.new("Frame")
     Topbar.Name = "Topbar"
-    Topbar.Size = UDim2.new(1, 0, 0, 48)
+    Topbar.Size = UDim2.new(1, 0, 0, 52)
     Topbar.BackgroundColor3 = Theme.Topbar
     Topbar.BorderSizePixel = 0
     Topbar.Parent = Main
 
+    -- WindUI-style: icon dot + title
+    local IconDot = Instance.new("Frame")
+    IconDot.Size = UDim2.new(0, 10, 0, 10)
+    IconDot.Position = UDim2.new(0, 16, 0.5, -5)
+    IconDot.BackgroundColor3 = Theme.Accent
+    IconDot.BorderSizePixel = 0
+    IconDot.Parent = Topbar
+    Corner(IconDot, 99)
+
     local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Size = UDim2.new(1, -130, 1, 0)
-    TitleLabel.Position = UDim2.new(0, 16, 0, 0)
+    TitleLabel.Size = UDim2.new(1, -150, 1, 0)
+    TitleLabel.Position = UDim2.new(0, 34, 0, 0)
     TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = "  " .. WindowName .. '  <font color="rgb(139,92,246)">• Velaris</font>'
+    TitleLabel.Text = WindowName .. '  <font color="rgb(139,92,246)">• Velaris</font>'
     TitleLabel.RichText = true
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.TextSize = 15
     TitleLabel.TextColor3 = Theme.Text
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     TitleLabel.Parent = Topbar
 
     local function TopButton(text, xOff)
         local b = Instance.new("TextButton")
-        b.Size = UDim2.new(0, 32, 0, 32)
-        b.Position = UDim2.new(1, xOff, 0.5, -16)
+        b.Size = UDim2.new(0, 36, 0, 36)
+        b.Position = UDim2.new(1, xOff, 0.5, -18)
         b.BackgroundColor3 = Theme.Element
         b.Text = text
         b.Font = Enum.Font.GothamBold
-        b.TextSize = 14
+        b.TextSize = 16
         b.TextColor3 = Theme.Text
+        b.AutoButtonColor = true
         b.Parent = Topbar
-        Corner(b, 8)
+        Corner(b, 10)
         return b
     end
 
-    local CloseBtn = TopButton("×", -42)
-    local MinBtn = TopButton("–", -80)
+    local CloseBtn = TopButton("×", -46)
+    local MinBtn = TopButton("–", -88)
+    CloseBtn.Name = "Close"
+    MinBtn.Name = "Minimize"
 
     MakeDraggable(Main, Topbar)
 
-    -- Sidebar
+    -- Floating reopen button (WindUI OpenButton, PC + mobile). Shows on minimize.
+    local OpenBtn = Instance.new("TextButton")
+    OpenBtn.Name = "VelarisOpen"
+    OpenBtn.Size = UDim2.new(0, 52, 0, 52)
+    OpenBtn.Position = UDim2.new(0, 16, 0.5, -26)
+    OpenBtn.BackgroundColor3 = Theme.Accent
+    OpenBtn.Text = "V"
+    OpenBtn.Font = Enum.Font.GothamBlack
+    OpenBtn.TextSize = 22
+    OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    OpenBtn.Visible = false
+    OpenBtn.AutoButtonColor = true
+    OpenBtn.Parent = Gui
+    Corner(OpenBtn, 99)
+    Stroke(OpenBtn, Color3.fromRGB(255,255,255), 1, 0.7)
+    MakeDraggable(OpenBtn, OpenBtn)
+
+    -- Sidebar (WindUI: wider, rounded cards)
+    local SIDE_W = startMobile and 132 or (Settings.SideBarWidth or 170)
     local Sidebar = Instance.new("ScrollingFrame")
     Sidebar.Name = "Sidebar"
-    Sidebar.Size = UDim2.new(0, 160, 1, -48)
-    Sidebar.Position = UDim2.new(0, 0, 0, 48)
+    Sidebar.Size = UDim2.new(0, SIDE_W, 1, -52)
+    Sidebar.Position = UDim2.new(0, 0, 0, 52)
     Sidebar.BackgroundColor3 = Theme.Sidebar
     Sidebar.BorderSizePixel = 0
     Sidebar.ScrollBarThickness = 0
@@ -441,7 +604,7 @@ function Velaris:CreateWindow(Settings)
     Sidebar.Parent = Main
 
     local SideList = Instance.new("UIListLayout")
-    SideList.Padding = UDim.new(0, 6)
+    SideList.Padding = UDim.new(0, 8)
     SideList.SortOrder = Enum.SortOrder.LayoutOrder
     SideList.Parent = Sidebar
     Padding(Sidebar, 10, 10, 10, 10)
@@ -449,8 +612,8 @@ function Velaris:CreateWindow(Settings)
     -- Page container
     local PageHolder = Instance.new("Frame")
     PageHolder.Name = "Pages"
-    PageHolder.Size = UDim2.new(1, -160, 1, -48)
-    PageHolder.Position = UDim2.new(0, 160, 0, 48)
+    PageHolder.Size = UDim2.new(1, -SIDE_W, 1, -52)
+    PageHolder.Position = UDim2.new(0, SIDE_W, 0, 52)
     PageHolder.BackgroundColor3 = Theme.Page
     PageHolder.BorderSizePixel = 0
     PageHolder.ClipsDescendants = true
@@ -524,33 +687,57 @@ function Velaris:CreateWindow(Settings)
     end
 
     function WindowObj:Destroy()
-        Gui:Destroy()
+        if Gui and Gui.Parent then Gui:Destroy() end
+    end
+
+    local function SetVisible(v, animate)
+        if v then
+            Main.Visible = true
+            OpenBtn.Visible = false
+            if animate then
+                Main.Size = UDim2.new(0, WIN_W, 0, WIN_H)
+            end
+        else
+            if animate then
+                local tw = Tween(Main, { Size = UDim2.new(0, 0, 0, 0) }, 0.2)
+                if tw then pcall(function() tw.Completed:Wait() end) else task.wait(0.2) end
+                Main.Visible = false
+                Main.Size = UDim2.new(0, WIN_W, 0, WIN_H)
+            else
+                Main.Visible = false
+            end
+            -- WindUI-style: always show floating V button so mobile can reopen
+            -- (PC can also use K keybind)
+            OpenBtn.Visible = true
+        end
     end
 
     function WindowObj:Toggle(state)
         if state == nil then state = not Main.Visible end
-        Main.Visible = state
+        SetVisible(state, false)
     end
+    function WindowObj:Minimize() SetVisible(false, true) end
+    function WindowObj:Maximize() SetVisible(true, false) end
 
-    MinBtn.MouseButton1Click:Connect(function()
-        WindowObj:Toggle(not Main.Visible)
-        -- keep a small restore pill? simplest: toggle back with keybind
-    end)
-    CloseBtn.MouseButton1Click:Connect(function()
+    local function OnMin()
+        SetVisible(false, true)
+    end
+    local function OnClose()
         WindowObj:Destroy()
-    end)
+    end
+    -- Activated = touch + mouse. Keep MouseButton1Click fallback for old executors.
+    MinBtn.Activated:Connect(OnMin)
+    MinBtn.MouseButton1Click:Connect(OnMin)
+    CloseBtn.Activated:Connect(OnClose)
+    CloseBtn.MouseButton1Click:Connect(OnClose)
+    OpenBtn.Activated:Connect(function() SetVisible(true, false) end)
+    OpenBtn.MouseButton1Click:Connect(function() SetVisible(true, false) end)
 
     UserInputService.InputBegan:Connect(function(input, gpe)
         if gpe then return end
         if input.KeyCode == ToggleKey then
-            if Main.Visible then
-                Tween(Main, { Size = UDim2.new(0, 0, 0, 0) }, 0.2)
-                task.wait(0.2)
-                Main.Visible = false
-                Main.Size = UDim2.new(0, 620, 0, 420)
-            else
-                Main.Visible = true
-            end
+            if not KeyPassed then return end
+            SetVisible(not Main.Visible, true)
         end
     end)
 
@@ -604,6 +791,7 @@ function Velaris:CreateWindow(Settings)
             TabBtn.TextColor3 = Theme.Text
             WindowObj._CurrentTab = Page
         end
+        TabBtn.Activated:Connect(Select)
         TabBtn.MouseButton1Click:Connect(Select)
         TabBtn.MouseEnter:Connect(function()
             if WindowObj._CurrentTab ~= Page then
@@ -828,7 +1016,7 @@ function Velaris:CreateWindow(Settings)
                 end
             end)
             UserInputService.InputChanged:Connect(function(inp)
-                if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+                if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
                     UpdateFromX(inp.Position.X)
                 end
             end)
@@ -1077,9 +1265,25 @@ function Velaris:CreateWindow(Settings)
         end
         return TabObj
     end
+    -- WindUI-style alias: Window:Tab({Title="Main", Icon="home"})
+    WindowObj.Tab = function(self, info, _icon)
+        if type(info) == "table" then
+            return self:CreateTab(info.Title or info.Name or "Tab", info.Icon)
+        else
+            return self:CreateTab(info, _icon)
+        end
+    end
 
-    -- Animate loading -> main
+    -- Animate loading -> main (waits for key if key system on)
     task.spawn(function()
+        if ksEnabled then
+            Loading.Visible = false
+            local waited = 0
+            repeat task.wait(0.1) waited = waited + 0.1 until KeyPassed or waited > 600 or not Gui.Parent
+            if not KeyPassed then return end
+            if not Loading.Parent then return end
+            Loading.Visible = true
+        end
         for i = 0, 100, 5 do
             if not Loading.Parent then break end
             BarFill.Size = UDim2.new(i/100, 0, 1, 0)
@@ -1087,12 +1291,15 @@ function Velaris:CreateWindow(Settings)
             task.wait(0.04)
         end
         task.wait(0.2)
-        Tween(Loading, { Size = UDim2.new(0, 0, 0, 0) }, 0.3)
-        task.wait(0.3)
-        Loading:Destroy()
+        if not Loading.Parent then return end
+        local ltw = Tween(Loading, { Size = UDim2.new(0, 0, 0, 0) }, 0.3)
+        if ltw then pcall(function() ltw.Completed:Wait() end) else task.wait(0.3) end
+        if Loading.Parent then Loading:Destroy() end
+        if not Main.Parent then return end
         Main.Visible = true
+        OpenBtn.Visible = false
         Main.Size = UDim2.new(0, 0, 0, 0)
-        Tween(Main, { Size = UDim2.new(0, 620, 0, 420) }, 0.4, Enum.EasingStyle.Back)
+        Tween(Main, { Size = UDim2.new(0, WIN_W, 0, WIN_H) }, 0.4, Enum.EasingStyle.Back)
         WindowObj:Notify({ Title = WindowName, Content = "Loaded with Velaris " .. Velaris.Version, Duration = 4 })
     end)
 
