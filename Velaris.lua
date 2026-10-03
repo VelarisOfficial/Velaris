@@ -155,20 +155,20 @@ local function GetParent()
 end
 
 local Themes = {
-    -- WindUI-modern inspired: flat near-black cards, wide gaps, big radius
+    -- WindUI Dark exact base + Velaris purple accent (our change vs WindUI blue)
     Dark = {
-        Background = Color3.fromRGB(16, 16, 20),
-        Topbar = Color3.fromRGB(19, 19, 24),
-        Sidebar = Color3.fromRGB(18, 18, 23),
-        Page = Color3.fromRGB(16, 16, 20),
-        Element = Color3.fromRGB(29, 29, 36),
-        ElementHover = Color3.fromRGB(37, 37, 48),
+        Background = Color3.fromRGB(16, 16, 16),
+        Topbar = Color3.fromRGB(24, 24, 27),
+        Sidebar = Color3.fromRGB(24, 24, 27),
+        Page = Color3.fromRGB(16, 16, 16),
+        Element = Color3.fromRGB(30, 30, 35),
+        ElementHover = Color3.fromRGB(42, 42, 50),
         Accent = Color3.fromRGB(139, 92, 246),
         Accent2 = Color3.fromRGB(99, 102, 241),
-        Text = Color3.fromRGB(235, 235, 245),
-        SubText = Color3.fromRGB(150, 150, 170),
-        Stroke = Color3.fromRGB(45, 45, 58),
-        Success = Color3.fromRGB(34, 197, 94),
+        Text = Color3.fromRGB(255, 255, 255),
+        SubText = Color3.fromRGB(122, 122, 122),
+        Stroke = Color3.fromRGB(46, 46, 51),
+        Success = Color3.fromRGB(51, 199, 89),
         Warn = Color3.fromRGB(234, 179, 8),
     },
     Midnight = {
@@ -256,7 +256,18 @@ function Velaris:CreateWindow(Settings)
     end
     local ValidKeys = NormalizeKeys(ksConfig.Keys or ksConfig.Key or ksConfig.KeyList, { "velaris-demo-key" })
     local KeyPassed = not ksEnabled
-    local ConfigSettings = Settings.ConfigurationSaving or { Enabled = false, FolderName = "Velaris", FileName = "config" }
+    local ConfigSettings = Settings.ConfigurationSaving or (Settings.Folder and { Enabled = true, FolderName = Settings.Folder, FileName = "config" }) or { Enabled = false, FolderName = "Velaris", FileName = "config" }
+    -- WindUI parity params (our changes keep Velaris API working too)
+    local Author = Settings.Author or "Velaris v" .. self.Version
+    local WinRadius = Settings.Radius or 16
+    local TopHeight = (Settings.Topbar and Settings.Topbar.Height) or 52
+    local OpenCfg = Settings.OpenButton or {}
+    local OpenTitle = OpenCfg.Title or ("Open " .. WindowName)
+    local OpenEnabled = (OpenCfg.Enabled ~= false)
+    local OpenDraggable = (OpenCfg.Draggable ~= false)
+    local OpenOnlyMobile = OpenCfg.OnlyMobile or false
+    local OpenScale = OpenCfg.Scale or 1
+    local OpenColor = OpenCfg.Color -- ColorSequence or nil (nil = rainbow)
 
     if ConfigSettings.Enabled then
         LoadConfig(ConfigSettings.FolderName, ConfigSettings.FileName)
@@ -285,7 +296,7 @@ function Velaris:CreateWindow(Settings)
     Loading.Position = UDim2.new(0.5, -190, 0.5, -90)
     Loading.BackgroundColor3 = Theme.Background
     Loading.Parent = Gui
-    Corner(Loading, 12)
+    Corner(Loading, 20)
     Stroke(Loading, Theme.Stroke, 1, 0.3)
 
     local LoadTitle = Instance.new("TextLabel")
@@ -347,7 +358,7 @@ function Velaris:CreateWindow(Settings)
         KeyFrame.Position = UDim2.new(0.5, -(mobileKS and 340 or 380) / 2, 0.5, -130)
         KeyFrame.BackgroundColor3 = Theme.Background
         KeyFrame.Parent = Gui
-        Corner(KeyFrame, 18)
+        Corner(KeyFrame, 20)
         Stroke(KeyFrame, Theme.Stroke, 1, 0.3)
 
         local KT = Instance.new("TextLabel")
@@ -384,7 +395,7 @@ function Velaris:CreateWindow(Settings)
         KeyBox.PlaceholderColor3 = Theme.SubText
         KeyBox.ClearTextOnFocus = false
         KeyBox.Parent = KeyFrame
-        Corner(KeyBox, 12)
+        Corner(KeyBox, 16)
         Stroke(KeyBox, Theme.Stroke, 1, 0.4)
         Padding(KeyBox, 12, 0, 12, 0)
 
@@ -398,7 +409,7 @@ function Velaris:CreateWindow(Settings)
         KeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         KeyBtn.AutoButtonColor = true
         KeyBtn.Parent = KeyFrame
-        Corner(KeyBtn, 12)
+        Corner(KeyBtn, 16)
 
         local KeyMsg = Instance.new("TextLabel")
         KeyMsg.Size = UDim2.new(1, -40, 0, 20)
@@ -495,7 +506,7 @@ function Velaris:CreateWindow(Settings)
     Main.BackgroundColor3 = Theme.Background
     Main.Visible = false
     Main.Parent = Gui
-    Corner(Main, 18)
+    Corner(Main, WinRadius)
     Stroke(Main, Theme.Stroke, 1, 0.25)
     Main.ClipsDescendants = true
 
@@ -524,32 +535,57 @@ function Velaris:CreateWindow(Settings)
 
     local Topbar = Instance.new("Frame")
     Topbar.Name = "Topbar"
-    Topbar.Size = UDim2.new(1, 0, 0, 52)
+    Topbar.Size = UDim2.new(1, 0, 0, TopHeight)
     Topbar.BackgroundColor3 = Theme.Topbar
     Topbar.BorderSizePixel = 0
     Topbar.Parent = Main
 
-    -- WindUI-style: icon dot + title
+    -- WindUI-style: icon dot + title + author subtitle + version tag
     local IconDot = Instance.new("Frame")
-    IconDot.Size = UDim2.new(0, 10, 0, 10)
-    IconDot.Position = UDim2.new(0, 16, 0.5, -5)
+    IconDot.Size = UDim2.new(0, 12, 0, 12)
+    IconDot.Position = UDim2.new(0, 16, 0, 12)
     IconDot.BackgroundColor3 = Theme.Accent
     IconDot.BorderSizePixel = 0
     IconDot.Parent = Topbar
     Corner(IconDot, 99)
 
     local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Size = UDim2.new(1, -150, 1, 0)
-    TitleLabel.Position = UDim2.new(0, 34, 0, 0)
+    TitleLabel.Size = UDim2.new(1, -170, 0, 22)
+    TitleLabel.Position = UDim2.new(0, 36, 0, 6)
     TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = WindowName .. '  <font color="rgb(139,92,246)">• Velaris</font>'
-    TitleLabel.RichText = true
+    TitleLabel.Text = WindowName
     TitleLabel.Font = Enum.Font.GothamBold
     TitleLabel.TextSize = 15
     TitleLabel.TextColor3 = Theme.Text
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
     TitleLabel.Parent = Topbar
+
+    local AuthorLabel = Instance.new("TextLabel")
+    AuthorLabel.Size = UDim2.new(1, -170, 0, 16)
+    AuthorLabel.Position = UDim2.new(0, 36, 0, 27)
+    AuthorLabel.BackgroundTransparency = 1
+    AuthorLabel.Text = tostring(Author)
+    AuthorLabel.Font = Enum.Font.Gotham
+    AuthorLabel.TextSize = 11
+    AuthorLabel.TextColor3 = Theme.SubText
+    AuthorLabel.TextXAlignment = Enum.TextXAlignment.Left
+    AuthorLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    AuthorLabel.Parent = Topbar
+
+    -- Velaris change vs WindUI: version tag pill (WindUI Window:Tag equivalent)
+    local Tag = Instance.new("TextLabel")
+    Tag.AnchorPoint = Vector2.new(0.5, 0.5)
+    Tag.Position = UDim2.new(0.5, 0, 0.5, 0)
+    Tag.Size = UDim2.new(0, 64, 0, 22)
+    Tag.BackgroundColor3 = Theme.Element
+    Tag.Text = "v" .. self.Version
+    Tag.Font = Enum.Font.GothamBold
+    Tag.TextSize = 11
+    Tag.TextColor3 = Theme.SubText
+    Tag.Parent = Topbar
+    Corner(Tag, 99)
+    Stroke(Tag, Theme.Stroke, 1, 0.5)
 
     local function TopButton(text, xOff)
         local b = Instance.new("TextButton")
@@ -562,7 +598,7 @@ function Velaris:CreateWindow(Settings)
         b.TextColor3 = Theme.Text
         b.AutoButtonColor = true
         b.Parent = Topbar
-        Corner(b, 10)
+        Corner(b, 14)
         return b
     end
 
@@ -573,29 +609,67 @@ function Velaris:CreateWindow(Settings)
 
     MakeDraggable(Main, Topbar)
 
-    -- Floating reopen button (WindUI OpenButton, PC + mobile). Shows on minimize.
+    -- Floating reopen pill (WindUI OpenButton style + rainbow stroke + hub name).
+    -- Shows when minimized. Draggable, PC + mobile, tap to reopen.
     local OpenBtn = Instance.new("TextButton")
     OpenBtn.Name = "VelarisOpen"
-    OpenBtn.Size = UDim2.new(0, 52, 0, 52)
-    OpenBtn.Position = UDim2.new(0, 16, 0.5, -26)
-    OpenBtn.BackgroundColor3 = Theme.Accent
-    OpenBtn.Text = "V"
-    OpenBtn.Font = Enum.Font.GothamBlack
-    OpenBtn.TextSize = 22
+    local pillW = math.clamp(150 + #OpenTitle * 4, 180, 280) * OpenScale
+    OpenBtn.Size = UDim2.new(0, pillW, 0, 44 * OpenScale)
+    OpenBtn.Position = UDim2.new(0, 16, 0.5, -22)
+    OpenBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 27)
+    OpenBtn.Text = "»  " .. OpenTitle
+    OpenBtn.Font = Enum.Font.GothamBold
+    OpenBtn.TextSize = 13
     OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    OpenBtn.TextTruncate = Enum.TextTruncate.AtEnd
     OpenBtn.Visible = false
     OpenBtn.AutoButtonColor = true
     OpenBtn.Parent = Gui
-    Corner(OpenBtn, 99)
-    Stroke(OpenBtn, Color3.fromRGB(255,255,255), 1, 0.7)
-    MakeDraggable(OpenBtn, OpenBtn)
+    do
+        local pc = Instance.new("UICorner")
+        pc.CornerRadius = UDim.new(1, 0)
+        pc.Parent = OpenBtn
+    end
+    local openStroke = Instance.new("UIStroke")
+    openStroke.Thickness = 3
+    openStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    openStroke.Parent = OpenBtn
+    local openGrad = Instance.new("UIGradient")
+    if typeof(OpenColor) == "ColorSequence" then
+        openGrad.Color = OpenColor
+    else
+        -- WindUI Rainbow-style default
+        openGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 64)),
+            ColorSequenceKeypoint.new(0.20, Color3.fromRGB(255, 128, 0)),
+            ColorSequenceKeypoint.new(0.40, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(0.60, Color3.fromRGB(0, 255, 106)),
+            ColorSequenceKeypoint.new(0.80, Color3.fromRGB(0, 144, 255)),
+            ColorSequenceKeypoint.new(1.00, Color3.fromRGB(170, 0, 255)),
+        })
+    end
+    openGrad.Rotation = 0
+    openGrad.Parent = openStroke
+    -- animate rainbow rotation like WindUI
+    task.spawn(function()
+        while OpenBtn.Parent do
+            for r = 0, 360, 4 do
+                if not OpenBtn.Parent then break end
+                openGrad.Rotation = r
+                task.wait(0.03)
+            end
+        end
+    end)
+    if OpenDraggable then
+        MakeDraggable(OpenBtn, OpenBtn)
+    end
 
-    -- Sidebar (WindUI: wider, rounded cards)
-    local SIDE_W = startMobile and 132 or (Settings.SideBarWidth or 170)
+    -- Sidebar (WindUI: 200px default, rounded cards)
+    local SIDE_W = startMobile and 150 or (Settings.SideBarWidth or Settings.SidebarWidth or 200)
     local Sidebar = Instance.new("ScrollingFrame")
     Sidebar.Name = "Sidebar"
-    Sidebar.Size = UDim2.new(0, SIDE_W, 1, -52)
-    Sidebar.Position = UDim2.new(0, 0, 0, 52)
+    Sidebar.Size = UDim2.new(0, SIDE_W, 1, -TopHeight)
+    Sidebar.Position = UDim2.new(0, 0, 0, TopHeight)
     Sidebar.BackgroundColor3 = Theme.Sidebar
     Sidebar.BorderSizePixel = 0
     Sidebar.ScrollBarThickness = 0
@@ -612,8 +686,8 @@ function Velaris:CreateWindow(Settings)
     -- Page container
     local PageHolder = Instance.new("Frame")
     PageHolder.Name = "Pages"
-    PageHolder.Size = UDim2.new(1, -SIDE_W, 1, -52)
-    PageHolder.Position = UDim2.new(0, SIDE_W, 0, 52)
+    PageHolder.Size = UDim2.new(1, -SIDE_W, 1, -TopHeight)
+    PageHolder.Position = UDim2.new(0, SIDE_W, 0, TopHeight)
     PageHolder.BackgroundColor3 = Theme.Page
     PageHolder.BorderSizePixel = 0
     PageHolder.ClipsDescendants = true
@@ -649,7 +723,7 @@ function Velaris:CreateWindow(Settings)
         n.Size = UDim2.new(1, 0, 0, 76)
         n.BackgroundColor3 = Theme.Background
         n.Parent = NotifHolder
-        Corner(n, 10)
+        Corner(n, 18)
         Stroke(n, Theme.Stroke, 1, 0.3)
 
         local nt = Instance.new("TextLabel")
@@ -690,6 +764,12 @@ function Velaris:CreateWindow(Settings)
         if Gui and Gui.Parent then Gui:Destroy() end
     end
 
+    local function ShouldShowPill()
+        if not OpenEnabled then return false end
+        if OpenOnlyMobile and not IsMobile() then return false end
+        return true
+    end
+
     local function SetVisible(v, animate)
         if v then
             Main.Visible = true
@@ -706,9 +786,8 @@ function Velaris:CreateWindow(Settings)
             else
                 Main.Visible = false
             end
-            -- WindUI-style: always show floating V button so mobile can reopen
-            -- (PC can also use K keybind)
-            OpenBtn.Visible = true
+            -- WindUI-style rainbow pill so mobile + PC can reopen
+            OpenBtn.Visible = ShouldShowPill()
         end
     end
 
@@ -718,6 +797,15 @@ function Velaris:CreateWindow(Settings)
     end
     function WindowObj:Minimize() SetVisible(false, true) end
     function WindowObj:Maximize() SetVisible(true, false) end
+    -- WindUI parity aliases
+    function WindowObj:Open() SetVisible(true, false) end
+    function WindowObj:Close() SetVisible(false, true) end
+    function WindowObj:EditOpenButton(cfg)
+        cfg = cfg or {}
+        if cfg.Title then OpenBtn.Text = "»  " .. tostring(cfg.Title) end
+        if cfg.Enabled ~= nil then OpenEnabled = cfg.Enabled if not OpenEnabled then OpenBtn.Visible = false end end
+        if cfg.Color and typeof(cfg.Color) == "ColorSequence" then openGrad.Color = cfg.Color end
+    end
 
     local function OnMin()
         SetVisible(false, true)
@@ -758,7 +846,7 @@ function Velaris:CreateWindow(Settings)
         TabBtn.LayoutOrder = tabIndex
         TabBtn.AutoButtonColor = false
         TabBtn.Parent = Sidebar
-        Corner(TabBtn, 8)
+        Corner(TabBtn, 14)
         Padding(TabBtn, 10, 0, 0, 0)
 
         local Page = Instance.new("ScrollingFrame")
@@ -813,7 +901,7 @@ function Velaris:CreateWindow(Settings)
             f.BackgroundColor3 = Theme.Element
             f.BorderSizePixel = 0
             f.Parent = Page
-            Corner(f, 10)
+            Corner(f, 16)
             Stroke(f, Theme.Stroke, 1, 0.5)
             Padding(f, 12, 10, 12, 10)
             return f
@@ -904,7 +992,7 @@ function Velaris:CreateWindow(Settings)
             b.TextSize = 13
             b.TextColor3 = Color3.fromRGB(255,255,255)
             b.Parent = f
-            Corner(b, 8)
+            Corner(b, 14)
             b.MouseButton1Click:Connect(function()
                 Tween(b, { Size = UDim2.new(1, -4, 1, -4) }, 0.08)
                 task.wait(0.08)
@@ -1039,7 +1127,7 @@ function Velaris:CreateWindow(Settings)
             f.Size = UDim2.new(1, -4, 0, 48)
             f.BackgroundColor3 = Theme.Element
             f.Parent = Page
-            Corner(f, 10)
+            Corner(f, 16)
             Stroke(f, Theme.Stroke, 1, 0.5)
             Padding(f, 12, 10, 12, 10)
             f.ClipsDescendants = true
@@ -1085,7 +1173,7 @@ function Velaris:CreateWindow(Settings)
                 ob.TextSize = 12
                 ob.TextColor3 = Theme.Text
                 ob.Parent = optHolder
-                Corner(ob, 6)
+                Corner(ob, 12)
                 ob.MouseButton1Click:Connect(function()
                     if multi then
                         local found = table.find(current, opt)
@@ -1143,7 +1231,7 @@ function Velaris:CreateWindow(Settings)
             box.PlaceholderColor3 = Theme.SubText
             box.ClearTextOnFocus = false
             box.Parent = f
-            Corner(box, 8)
+            Corner(box, 14)
             Stroke(box, Theme.Stroke, 1, 0.4)
             Padding(box, 10, 0, 10, 0)
             box.FocusLost:Connect(function(enter)
@@ -1176,7 +1264,7 @@ function Velaris:CreateWindow(Settings)
             kb.TextSize = 12
             kb.TextColor3 = Theme.Text
             kb.Parent = f
-            Corner(kb, 8)
+            Corner(kb, 12)
             Stroke(kb, Theme.Stroke, 1, 0.4)
 
             local listening = false
@@ -1225,7 +1313,7 @@ function Velaris:CreateWindow(Settings)
             preview.BackgroundColor3 = color
             preview.Text = ""
             preview.Parent = f
-            Corner(preview, 8)
+            Corner(preview, 12)
             Stroke(preview, Theme.Stroke, 1, 0.3)
 
             -- Simple rainbow cycle on click + RGB inputs via prompt? Keep simple: click cycles preset colors
